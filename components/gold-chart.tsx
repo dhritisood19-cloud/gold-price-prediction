@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { PricePoint, TechnicalIndicators } from "@/lib/types";
+import { toINR } from "@/lib/mock-data";
 
 interface GoldChartProps {
   historicalData: PricePoint[];
@@ -45,22 +46,24 @@ function CustomTooltip({
   const ma20Entry = payload.find((p) => p.dataKey === "ma20");
   const ma50Entry = payload.find((p) => p.dataKey === "ma50");
 
+  const fmt = (v: number) => "₹" + v.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
   return (
     <div className="rounded-lg border border-border bg-card p-3 shadow-lg">
       <p className="mb-1 text-xs text-muted-foreground">{label}</p>
       {priceEntry && (
         <p className="font-semibold text-gold-dark">
-          Price: ${priceEntry.value.toFixed(2)}
+          Price: {fmt(priceEntry.value)}/g
         </p>
       )}
       {ma5Entry && ma5Entry.value != null && (
-        <p className="text-xs" style={{ color: "#ef4444" }}>MA5: ${ma5Entry.value.toFixed(2)}</p>
+        <p className="text-xs" style={{ color: "#ef4444" }}>MA5: {fmt(ma5Entry.value)}</p>
       )}
       {ma20Entry && ma20Entry.value != null && (
-        <p className="text-xs" style={{ color: "#3b82f6" }}>MA20: ${ma20Entry.value.toFixed(2)}</p>
+        <p className="text-xs" style={{ color: "#3b82f6" }}>MA20: {fmt(ma20Entry.value)}</p>
       )}
       {ma50Entry && ma50Entry.value != null && (
-        <p className="text-xs" style={{ color: "#8b5cf6" }}>MA50: ${ma50Entry.value.toFixed(2)}</p>
+        <p className="text-xs" style={{ color: "#8b5cf6" }}>MA50: {fmt(ma50Entry.value)}</p>
       )}
     </div>
   );
@@ -103,12 +106,15 @@ export default function GoldChart({
 
   const chartData: ChartDataPoint[] = historicalData.map((d, i) => {
     const fullIndex = maStartIndex + i;
+    const ma5Raw = technicalIndicators?.ma5[fullIndex];
+    const ma20Raw = technicalIndicators?.ma20[fullIndex];
+    const ma50Raw = technicalIndicators?.ma50[fullIndex];
     return {
       date: d.date,
-      price: d.price,
-      ma5: technicalIndicators?.ma5[fullIndex] ?? undefined,
-      ma20: technicalIndicators?.ma20[fullIndex] ?? undefined,
-      ma50: technicalIndicators?.ma50[fullIndex] ?? undefined,
+      price: toINR(d.price),
+      ma5: ma5Raw != null ? toINR(ma5Raw) : undefined,
+      ma20: ma20Raw != null ? toINR(ma20Raw) : undefined,
+      ma50: ma50Raw != null ? toINR(ma50Raw) : undefined,
     };
   });
 
@@ -147,10 +153,10 @@ export default function GoldChart({
             />
             <YAxis
               domain={["auto", "auto"]}
-              tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+              tickFormatter={(v: number) => `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`}
               tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               stroke="var(--border)"
-              width={65}
+              width={75}
             />
             <Tooltip content={<CustomTooltip />} />
 
@@ -158,24 +164,24 @@ export default function GoldChart({
             {showSR && technicalIndicators && (
               <>
                 <ReferenceLine
-                  y={technicalIndicators.support}
+                  y={toINR(technicalIndicators.support)}
                   stroke="var(--positive)"
                   strokeDasharray="6 3"
                   strokeWidth={1}
                   label={{
-                    value: `Support $${technicalIndicators.support.toFixed(0)}`,
+                    value: `Support ₹${toINR(technicalIndicators.support).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`,
                     position: "left",
                     fill: "var(--positive)",
                     fontSize: 10,
                   }}
                 />
                 <ReferenceLine
-                  y={technicalIndicators.resistance}
+                  y={toINR(technicalIndicators.resistance)}
                   stroke="var(--negative)"
                   strokeDasharray="6 3"
                   strokeWidth={1}
                   label={{
-                    value: `Resistance $${technicalIndicators.resistance.toFixed(0)}`,
+                    value: `Resistance ₹${toINR(technicalIndicators.resistance).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`,
                     position: "left",
                     fill: "var(--negative)",
                     fontSize: 10,
@@ -230,7 +236,7 @@ export default function GoldChart({
             {/* Current price dot */}
             <ReferenceDot
               x={lastHistorical.date}
-              y={lastHistorical.price}
+              y={toINR(lastHistorical.price)}
               r={5}
               fill="var(--gold)"
               stroke="var(--card)"

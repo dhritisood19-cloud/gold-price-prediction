@@ -22,6 +22,103 @@ const CATEGORY_LABELS: { id: keyof CategoryWeights; label: string }[] = [
   { id: "behavioral_supply", label: "Behavioral & Supply" },
 ];
 
+/** Redistribute other category weights to keep total at 100 when one changes. */
+function redistributeWeights(
+  changedId: keyof CategoryWeights,
+  newValue: number,
+  currentWeights: CategoryWeights
+): CategoryWeights {
+  const diff = newValue - currentWeights[changedId];
+  if (diff === 0) return { ...currentWeights, [changedId]: newValue };
+
+  const otherIds = CATEGORY_LABELS.map((c) => c.id).filter((cid) => cid !== changedId);
+  const otherTotal = otherIds.reduce((sum, cid) => sum + currentWeights[cid], 0);
+  const updated = { ...currentWeights, [changedId]: newValue };
+
+  if (otherTotal > 0) {
+    const remaining = -diff;
+    for (const cid of otherIds) {
+      const proportion = currentWeights[cid] / otherTotal;
+      const adjustment = Math.round(remaining * proportion * 10) / 10;
+      updated[cid] = Math.max(0, Math.round((currentWeights[cid] + adjustment) * 10) / 10);
+    }
+    const newTotal = Object.values(updated).reduce((sum, w) => sum + w, 0);
+    const roundingError = Math.round((100 - newTotal) * 10) / 10;
+    if (Math.abs(roundingError) > 0.01) {
+      const largest = otherIds.reduce((a, b) => (updated[a] >= updated[b] ? a : b));
+      updated[largest] = Math.round((updated[largest] + roundingError) * 10) / 10;
+    }
+  }
+
+  return updated;
+}
+
+/** Scale subfactors within a category so they sum to the new category weight. */
+function scaleSubFactors(
+  categoryId: string,
+  newCategoryWeight: number,
+  currentSfWeights: Record<string, Record<string, number>>,
+  sfDefaults: Record<string, Record<string, number>>
+): Record<string, Record<string, number>> {
+  const sfWeights = currentSfWeights[categoryId] || {};
+  const catDefaults = sfDefaults[categoryId] || {};
+  const sfNames = Object.keys(catDefaults);
+
+  const currentSum = sfNames.reduce(
+    (sum, name) => sum + (sfWeights[name] ?? catDefaults[name]),
+    0
+  );
+
+  const updatedSF = { ...currentSfWeights };
+
+  if (currentSum > 0 && newCategoryWeight > 0) {
+    const scale = newCategoryWeight / currentSum;
+    const newSfWeights: Record<string, number> = {};
+
+    for (const name of sfNames) {
+      const currentVal = sfWeights[name] ?? catDefaults[name];
+      newSfWeights[name] = Math.max(0, Math.min(20, Math.round(currentVal * scale * 2) / 2));
+    }
+
+    // Fix rounding error by adjusting the largest subfactor
+    const scaledSum = Object.values(newSfWeights).reduce((s, v) => s + v, 0);
+    const sfError = Math.round((newCategoryWeight - scaledSum) * 2) / 2;
+    if (Math.abs(sfError) >= 0.5) {
+      const largestSf = sfNames.reduce((a, b) =>
+        newSfWeights[a] >= newSfWeights[b] ? a : b
+      );
+      newSfWeights[largestSf] = Math.max(
+        0,
+        Math.min(20, newSfWeights[largestSf] + sfError)
+      );
+    }
+
+    updatedSF[categoryId] = newSfWeights;
+  } else if (newCategoryWeight === 0) {
+    const newSfWeights: Record<string, number> = {};
+    for (const name of sfNames) {
+      newSfWeights[name] = 0;
+    }
+    updatedSF[categoryId] = newSfWeights;
+  }
+
+  return updatedSF;
+}
+
+/** Compute the sum of subfactor weights for a category. */
+function subFactorSum(
+  categoryId: string,
+  sfWeights: Record<string, Record<string, number>>,
+  sfDefaults: Record<string, Record<string, number>>
+): number {
+  const catDefaults = sfDefaults[categoryId] || {};
+  const catWeights = sfWeights[categoryId] || {};
+  return Object.keys(catDefaults).reduce(
+    (sum, name) => sum + (catWeights[name] ?? catDefaults[name]),
+    0
+  );
+}
+
 export default function WeightController({
   weights,
   onChange,
@@ -35,63 +132,47 @@ export default function WeightController({
   const isBalanced = Math.abs(total - 100) < 0.5;
 
   function handleSliderChange(id: keyof CategoryWeights, newValue: number) {
-    const oldValue = weights[id];
-    const diff = newValue - oldValue;
-    if (diff === 0) return;
+    if (newValue === weights[id]) return;
 
-    const otherIds = CATEGORY_LABELS.map((c) => c.id).filter((cid) => cid !== id);
-    const otherTotal = otherIds.reduce((sum, cid) => sum + weights[cid], 0);
-    const updated = { ...weights, [id]: newValue };
-
-    if (otherTotal > 0) {
-      const remaining = -diff;
-      for (const cid of otherIds) {
-        const proportion = weights[cid] / otherTotal;
-        const adjustment = Math.round(remaining * proportion * 10) / 10;
-        updated[cid] = Math.max(0, Math.round((weights[cid] + adjustment) * 10) / 10);
-      }
-
-      const newTotal = Object.values(updated).reduce((sum, w) => sum + w, 0);
-      const roundingError = Math.round((100 - newTotal) * 10) / 10;
-      if (Math.abs(roundingError) > 0.01) {
-        const largest = otherIds.reduce((a, b) => (updated[a] >= updated[b] ? a : b));
-        updated[largest] = Math.round((updated[largest] + roundingError) * 10) / 10;
-      }
-    }
-
+    // 1. Redistribute other category weights to keep total at 100
+    const updated = redistributeWeights(id, newValue, weights);
     onChange(updated);
+
+    // 2. Scale this category's subfactors proportionally to match new weight
+    const updatedSF = scaleSubFactors(
+      id,
+      newValue,
+      subFactorWeights,
+      defaultSubFactorWeights
+    );
+    onSubFactorWeightsChange(updatedSF);
   }
 
   function handleSubFactorChange(categoryId: string, name: string, value: number) {
-    const updated = { ...subFactorWeights };
-    updated[categoryId] = { ...updated[categoryId], [name]: value };
-    onSubFactorWeightsChange(updated);
+    // 1. Update the individual subfactor weight
+    const updatedSF = { ...subFactorWeights };
+    updatedSF[categoryId] = { ...updatedSF[categoryId], [name]: value };
+    onSubFactorWeightsChange(updatedSF);
+
+    // 2. Category weight = sum of its subfactors
+    const newCatWeight = Math.round(
+      subFactorSum(categoryId, updatedSF, defaultSubFactorWeights) * 10
+    ) / 10;
+
+    const catId = categoryId as keyof CategoryWeights;
+    if (Math.abs(newCatWeight - weights[catId]) >= 0.1) {
+      // Redistribute other categories to keep total at 100
+      const updated = redistributeWeights(catId, newCatWeight, weights);
+      onChange(updated);
+    }
   }
 
   function handleResetCategory(id: string) {
     const catId = id as keyof CategoryWeights;
     const defaultWeight = defaults[catId];
-    const diff = defaultWeight - weights[catId];
 
-    const otherIds = CATEGORY_LABELS.map((c) => c.id).filter((cid) => cid !== catId);
-    const otherTotal = otherIds.reduce((sum, cid) => sum + weights[cid], 0);
-    const updated = { ...weights, [catId]: defaultWeight };
-
-    if (otherTotal > 0 && diff !== 0) {
-      const remaining = -diff;
-      for (const cid of otherIds) {
-        const proportion = weights[cid] / otherTotal;
-        const adjustment = Math.round(remaining * proportion * 10) / 10;
-        updated[cid] = Math.max(0, Math.round((weights[cid] + adjustment) * 10) / 10);
-      }
-      const newTotal = Object.values(updated).reduce((sum, w) => sum + w, 0);
-      const roundingError = Math.round((100 - newTotal) * 10) / 10;
-      if (Math.abs(roundingError) > 0.01) {
-        const largest = otherIds.reduce((a, b) => (updated[a] >= updated[b] ? a : b));
-        updated[largest] = Math.round((updated[largest] + roundingError) * 10) / 10;
-      }
-    }
-
+    // Reset category weight and redistribute others
+    const updated = redistributeWeights(catId, defaultWeight, weights);
     onChange(updated);
 
     // Reset sub-factor weights for this category
@@ -146,6 +227,10 @@ export default function WeightController({
           const sfDefaults = defaultSubFactorWeights[id] || {};
           const sfNames = Object.keys(sfDefaults);
           const hasChanges = hasCategoryChanges(id);
+          const sfSum = sfNames.reduce(
+            (sum, name) => sum + (sfWeights[name] ?? sfDefaults[name]),
+            0
+          );
 
           return (
             <div
@@ -200,9 +285,14 @@ export default function WeightController({
               {/* Sub-factor rows */}
               {isExpanded && sfNames.length > 0 && (
                 <div className="border-t border-border bg-muted/30 px-4 pb-3 pt-2">
-                  <p className="text-[10px] text-muted-foreground mb-2 pl-7">
-                    Sub-factor weights (relative importance within category)
-                  </p>
+                  <div className="flex items-center justify-between mb-2 pl-7">
+                    <p className="text-[10px] text-muted-foreground">
+                      Sub-factor weights (sum = category weight)
+                    </p>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      Sum: {Math.round(sfSum * 10) / 10}
+                    </span>
+                  </div>
                   <div className="space-y-2">
                     {sfNames.map((name) => {
                       const value = sfWeights[name] ?? sfDefaults[name];

@@ -71,7 +71,7 @@ export default function HeroDecision({
       <div className="flex flex-wrap items-start justify-between gap-4">
         {/* Left: Price */}
         <div>
-          <p className="text-xs text-muted-foreground">Gold Price (₹/10g)</p>
+          <p className="text-xs text-muted-foreground">Gold Price (₹/g)</p>
           <span className="text-4xl font-bold tracking-tight sm:text-5xl">
             {formatINR(stats.currentPriceINR)}
           </span>

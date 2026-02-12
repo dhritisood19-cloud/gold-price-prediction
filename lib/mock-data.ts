@@ -23,9 +23,9 @@ export type { PricePoint, Statistics };
 
 export const USD_TO_INR = 83.5;
 
-/** Convert USD/oz to INR per 10g */
+/** Convert USD/oz to INR per 1g */
 export function toINR(usdPerOz: number): number {
-  return Math.round((usdPerOz / 31.1035) * 10 * USD_TO_INR * 100) / 100;
+  return Math.round((usdPerOz / 31.1035) * USD_TO_INR * 100) / 100;
 }
 
 // ── Seeded PRNG (exported) ─────────────────────────────────────
