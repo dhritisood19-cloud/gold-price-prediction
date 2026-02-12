@@ -4,8 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import {
   Sun,
   Moon,
-  TrendingUp,
-  TrendingDown,
   Coins,
 } from "lucide-react";
 import GoldChart from "@/components/gold-chart";
@@ -20,7 +18,7 @@ import {
   buildDashboardData,
   type TimeRange,
 } from "@/lib/mock-data";
-import type { Statistics, TimeHorizon, CategoryWeights } from "@/lib/types";
+import type { TimeHorizon, CategoryWeights } from "@/lib/types";
 import { DEFAULT_CATEGORY_WEIGHTS } from "@/lib/types";
 import { getDefaultSubFactorWeights } from "@/lib/mock-factors";
 
@@ -102,14 +100,11 @@ export default function Dashboard() {
           defaultSubFactorWeights={defaultSubFactorWeights}
         />
 
-        {/* Statistics + Risk Calendar */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <StatisticsGrid stats={stats} />
-          <RiskCalendar
-            events={data.riskEvents}
-            volatilityHistory={data.volatilityHistory}
-          />
-        </div>
+        {/* Risk Calendar */}
+        <RiskCalendar
+          events={data.riskEvents}
+          volatilityHistory={data.volatilityHistory}
+        />
 
         {/* Confidence Footer */}
         <ConfidenceFooter
@@ -183,62 +178,3 @@ function TimeRangeSelector({
   );
 }
 
-// ── Statistics Grid ────────────────────────────────────────────
-
-function formatINR(value: number): string {
-  return "₹" + value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
-}
-
-function StatisticsGrid({ stats }: { stats: Statistics }) {
-  const items = [
-    {
-      label: "52W High",
-      value: formatINR(stats.high52wINR),
-      sub: `$${stats.high52w.toFixed(2)}`,
-      icon: TrendingUp,
-      color: "text-positive",
-    },
-    {
-      label: "52W Low",
-      value: formatINR(stats.low52wINR),
-      sub: `$${stats.low52w.toFixed(2)}`,
-      icon: TrendingDown,
-      color: "text-negative",
-    },
-    {
-      label: "Average",
-      value: formatINR(stats.averageINR),
-      sub: `$${stats.average.toFixed(2)}`,
-      icon: Coins,
-      color: "text-gold",
-    },
-    {
-      label: "Volatility",
-      value: `${stats.volatility.toFixed(2)}%`,
-      sub: "Annualized",
-      icon: TrendingUp,
-      color: "text-gold-dark",
-    },
-  ];
-
-  return (
-    <div>
-      <h2 className="mb-3 text-lg font-semibold">Key Statistics</h2>
-      <div className="grid grid-cols-2 gap-4">
-        {items.map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-xl border border-border bg-card p-4 shadow-sm"
-          >
-            <div className="flex items-center gap-2">
-              <stat.icon className={`h-4 w-4 ${stat.color}`} />
-              <p className="text-sm text-muted-foreground">{stat.label}</p>
-            </div>
-            <p className="mt-2 text-xl font-bold">{stat.value}</p>
-            <p className="text-[11px] text-muted-foreground">{stat.sub}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
