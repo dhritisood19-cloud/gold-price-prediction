@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gold Price Prediction Dashboard",
-  description: "Real-time gold price tracking and AI-powered predictions",
+  title: "Gold Direction Predictor",
+  description: "MCX Digital Gold — Buy / Hold / Sell Signal System",
 };
 
 export default function RootLayout({

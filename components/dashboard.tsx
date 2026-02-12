@@ -1,39 +1,44 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Sun,
   Moon,
   TrendingUp,
   TrendingDown,
   Coins,
-  ArrowUpRight,
-  ArrowDownRight,
 } from "lucide-react";
 import GoldChart from "@/components/gold-chart";
+import HeroDecision from "@/components/hero-decision";
+import TimeHorizonSelector from "@/components/time-horizon-selector";
+import FactorBreakdown from "@/components/factor-breakdown";
+import WeightController from "@/components/weight-controller";
+import RiskCalendar from "@/components/risk-calendar";
+import ConfidenceFooter from "@/components/confidence-footer";
 import {
   historicalData,
-  statistics,
-  marketFactors,
-  filterByRange,
-  getPredictions,
+  buildDashboardData,
   type TimeRange,
-  type PredictionHorizon,
 } from "@/lib/mock-data";
+import type { Statistics, TimeHorizon, CategoryWeights } from "@/lib/types";
+import { DEFAULT_CATEGORY_WEIGHTS } from "@/lib/types";
+import { getDefaultSubFactorWeights } from "@/lib/mock-factors";
 
 const TIME_RANGES: TimeRange[] = ["1W", "1M", "3M", "6M", "1Y"];
-const PREDICTION_HORIZONS: { label: string; value: PredictionHorizon }[] = [
-  { label: "7 Days", value: 7 },
-  { label: "30 Days", value: 30 },
-  { label: "90 Days", value: 90 },
-];
+
+const DAYS_MAP: Record<TimeRange, number> = {
+  "1W": 7, "1M": 30, "3M": 90, "6M": 180, "1Y": 365,
+};
 
 export default function Dashboard() {
   const [darkMode, setDarkMode] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>("6M");
-  const [predictionHorizon, setPredictionHorizon] = useState<PredictionHorizon>(30);
+  const [timeHorizon, setTimeHorizon] = useState<TimeHorizon>("swing");
+  const [categoryWeights, setCategoryWeights] = useState<CategoryWeights>({ ...DEFAULT_CATEGORY_WEIGHTS });
+  const [subFactorWeights, setSubFactorWeights] = useState<Record<string, Record<string, number>>>(() => getDefaultSubFactorWeights());
+  const defaultSubFactorWeights = useMemo(() => getDefaultSubFactorWeights(), []);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
-  // Apply dark mode class to <html>
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add("dark");
@@ -42,10 +47,20 @@ export default function Dashboard() {
     }
   }, [darkMode]);
 
-  const filteredData = filterByRange(historicalData, timeRange);
-  const predictions = getPredictions(predictionHorizon);
-  const lastPrediction = predictions[predictions.length - 1];
-  const isPositiveChange = statistics.dailyChange >= 0;
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshCounter((c) => c + 1);
+    }, 300000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const data = useMemo(
+    () => buildDashboardData(timeRange, categoryWeights, subFactorWeights, refreshCounter),
+    [timeRange, categoryWeights, subFactorWeights, refreshCounter]
+  );
+
+  const maStartIndex = historicalData.length - DAYS_MAP[timeRange];
+  const stats = data.statistics;
 
   return (
     <div className="min-h-screen bg-background text-foreground transition-colors">
@@ -53,41 +68,60 @@ export default function Dashboard() {
         {/* Header */}
         <Header darkMode={darkMode} setDarkMode={setDarkMode} />
 
-        {/* Hero Price */}
-        <HeroPrice
-          currentPrice={statistics.currentPrice}
-          dailyChange={statistics.dailyChange}
-          dailyChangePercent={statistics.dailyChangePercent}
-          isPositive={isPositiveChange}
+        {/* Hero Decision Panel */}
+        <HeroDecision
+          statistics={stats}
+          biasScoreData={data.biasScoreData}
         />
 
+        {/* Time Horizon Selector */}
+        <TimeHorizonSelector selected={timeHorizon} onChange={setTimeHorizon} />
+
         {/* Time Range Selector */}
-        <TimeRangeSelector
-          selected={timeRange}
-          onChange={setTimeRange}
-        />
+        <TimeRangeSelector selected={timeRange} onChange={setTimeRange} />
 
         {/* Chart */}
         <div className="mt-4 rounded-xl border border-border bg-card p-4 shadow-sm">
-          <GoldChart historicalData={filteredData} predictions={predictions} />
+          <GoldChart
+            historicalData={data.filteredData}
+            technicalIndicators={data.technicalIndicators}
+            maStartIndex={maStartIndex}
+          />
         </div>
 
-        {/* Prediction Controls */}
-        <PredictionControls
-          selected={predictionHorizon}
-          onChange={setPredictionHorizon}
-          lastPrediction={lastPrediction}
+        {/* Factor Breakdown */}
+        <FactorBreakdown categories={data.factorCategories} timeHorizon={timeHorizon} />
+
+        {/* Weight Controller */}
+        <WeightController
+          weights={categoryWeights}
+          onChange={setCategoryWeights}
+          defaults={DEFAULT_CATEGORY_WEIGHTS}
+          subFactorWeights={subFactorWeights}
+          onSubFactorWeightsChange={setSubFactorWeights}
+          defaultSubFactorWeights={defaultSubFactorWeights}
         />
 
-        {/* Statistics Grid */}
-        <StatisticsGrid />
+        {/* Statistics + Risk Calendar */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <StatisticsGrid stats={stats} />
+          <RiskCalendar
+            events={data.riskEvents}
+            volatilityHistory={data.volatilityHistory}
+          />
+        </div>
 
-        {/* Market Factors */}
-        <MarketFactorsGrid />
+        {/* Confidence Footer */}
+        <ConfidenceFooter
+          confidence={data.biasScoreData.confidence}
+          lastUpdated={data.lastUpdated}
+        />
       </div>
     </div>
   );
 }
+
+// ── Header ─────────────────────────────────────────────────────
 
 function Header({
   darkMode,
@@ -103,7 +137,7 @@ function Header({
           <Coins className="h-5 w-5 text-gold" />
         </div>
         <h1 className="text-2xl font-bold tracking-tight">
-          <span className="text-gold">Gold</span>Sight
+          <span className="text-gold">Gold</span> Direction Predictor
         </h1>
       </div>
       <button
@@ -121,46 +155,7 @@ function Header({
   );
 }
 
-function HeroPrice({
-  currentPrice,
-  dailyChange,
-  dailyChangePercent,
-  isPositive,
-}: {
-  currentPrice: number;
-  dailyChange: number;
-  dailyChangePercent: number;
-  isPositive: boolean;
-}) {
-  return (
-    <div className="mt-6">
-      <div className="flex items-end gap-4">
-        <span className="text-4xl font-bold tracking-tight sm:text-5xl">
-          ${currentPrice.toFixed(2)}
-        </span>
-        <div
-          className={`mb-1 flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium ${
-            isPositive
-              ? "bg-positive/10 text-positive"
-              : "bg-negative/10 text-negative"
-          }`}
-        >
-          {isPositive ? (
-            <ArrowUpRight className="h-4 w-4" />
-          ) : (
-            <ArrowDownRight className="h-4 w-4" />
-          )}
-          {isPositive ? "+" : ""}
-          {dailyChange.toFixed(2)} ({dailyChangePercent.toFixed(2)}%)
-        </div>
-      </div>
-      <div className="mt-2 h-1 w-24 rounded-full bg-gradient-to-r from-gold-dark via-gold to-gold-light" />
-      <p className="mt-2 text-sm text-muted-foreground">
-        Gold Spot Price (XAU/USD)
-      </p>
-    </div>
-  );
-}
+// ── Time Range Selector ────────────────────────────────────────
 
 function TimeRangeSelector({
   selected,
@@ -188,107 +183,49 @@ function TimeRangeSelector({
   );
 }
 
-function PredictionControls({
-  selected,
-  onChange,
-  lastPrediction,
-}: {
-  selected: PredictionHorizon;
-  onChange: (v: PredictionHorizon) => void;
-  lastPrediction: { predicted: number; upperBound: number; lowerBound: number };
-}) {
-  const predChange = lastPrediction.predicted - statistics.currentPrice;
-  const predChangePercent = (predChange / statistics.currentPrice) * 100;
-  const isPredPositive = predChange >= 0;
+// ── Statistics Grid ────────────────────────────────────────────
 
-  return (
-    <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-sm">
-      <h2 className="mb-3 text-lg font-semibold">Price Prediction</h2>
-      <div className="flex flex-wrap gap-2">
-        {PREDICTION_HORIZONS.map((h) => (
-          <button
-            key={h.value}
-            onClick={() => onChange(h.value)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              selected === h.value
-                ? "bg-gold text-white shadow-sm"
-                : "bg-muted text-muted-foreground hover:bg-border"
-            }`}
-          >
-            {h.label}
-          </button>
-        ))}
-      </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        <div className="rounded-lg bg-muted p-3">
-          <p className="text-xs text-muted-foreground">Predicted Price</p>
-          <p className="mt-1 text-xl font-bold">
-            ${lastPrediction.predicted.toFixed(2)}
-          </p>
-          <div
-            className={`mt-1 flex items-center gap-1 text-sm font-medium ${
-              isPredPositive ? "text-positive" : "text-negative"
-            }`}
-          >
-            {isPredPositive ? (
-              <TrendingUp className="h-3.5 w-3.5" />
-            ) : (
-              <TrendingDown className="h-3.5 w-3.5" />
-            )}
-            {isPredPositive ? "+" : ""}
-            {predChangePercent.toFixed(2)}%
-          </div>
-        </div>
-        <div className="rounded-lg bg-muted p-3">
-          <p className="text-xs text-muted-foreground">Upper Bound (95%)</p>
-          <p className="mt-1 text-xl font-bold text-positive">
-            ${lastPrediction.upperBound.toFixed(2)}
-          </p>
-        </div>
-        <div className="rounded-lg bg-muted p-3">
-          <p className="text-xs text-muted-foreground">Lower Bound (95%)</p>
-          <p className="mt-1 text-xl font-bold text-negative">
-            ${lastPrediction.lowerBound.toFixed(2)}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+function formatINR(value: number): string {
+  return "₹" + value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
 
-function StatisticsGrid() {
-  const stats = [
+function StatisticsGrid({ stats }: { stats: Statistics }) {
+  const items = [
     {
       label: "52W High",
-      value: `$${statistics.high52w.toFixed(2)}`,
+      value: formatINR(stats.high52wINR),
+      sub: `$${stats.high52w.toFixed(2)}`,
       icon: TrendingUp,
       color: "text-positive",
     },
     {
       label: "52W Low",
-      value: `$${statistics.low52w.toFixed(2)}`,
+      value: formatINR(stats.low52wINR),
+      sub: `$${stats.low52w.toFixed(2)}`,
       icon: TrendingDown,
       color: "text-negative",
     },
     {
       label: "Average",
-      value: `$${statistics.average.toFixed(2)}`,
+      value: formatINR(stats.averageINR),
+      sub: `$${stats.average.toFixed(2)}`,
       icon: Coins,
       color: "text-gold",
     },
     {
       label: "Volatility",
-      value: `${statistics.volatility.toFixed(2)}%`,
+      value: `${stats.volatility.toFixed(2)}%`,
+      sub: "Annualized",
       icon: TrendingUp,
       color: "text-gold-dark",
     },
   ];
 
   return (
-    <div className="mt-6">
+    <div>
       <h2 className="mb-3 text-lg font-semibold">Key Statistics</h2>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {stats.map((stat) => (
+      <div className="grid grid-cols-2 gap-4">
+        {items.map((stat) => (
           <div
             key={stat.label}
             className="rounded-xl border border-border bg-card p-4 shadow-sm"
@@ -297,43 +234,8 @@ function StatisticsGrid() {
               <stat.icon className={`h-4 w-4 ${stat.color}`} />
               <p className="text-sm text-muted-foreground">{stat.label}</p>
             </div>
-            <p className="mt-2 text-2xl font-bold">{stat.value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MarketFactorsGrid() {
-  const impactStyles = {
-    bullish: "bg-positive/10 text-positive",
-    bearish: "bg-negative/10 text-negative",
-    neutral: "bg-muted text-muted-foreground",
-  };
-
-  return (
-    <div className="mt-6 mb-8">
-      <h2 className="mb-3 text-lg font-semibold">Market Factors</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {marketFactors.map((factor) => (
-          <div
-            key={factor.name}
-            className="rounded-xl border border-border bg-card p-4 shadow-sm"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium">{factor.name}</h3>
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${
-                  impactStyles[factor.impact]
-                }`}
-              >
-                {factor.impact}
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {factor.description}
-            </p>
+            <p className="mt-2 text-xl font-bold">{stat.value}</p>
+            <p className="text-[11px] text-muted-foreground">{stat.sub}</p>
           </div>
         ))}
       </div>

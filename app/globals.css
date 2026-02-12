@@ -14,6 +14,9 @@
   --border: #e7e0d5;
   --positive: #16a34a;
   --negative: #dc2626;
+  --warning: #ca8a04;
+  --warning-muted: #fef9c3;
+  --info: #2563eb;
 }
 
 .dark {
@@ -30,6 +33,9 @@
   --border: #44403c;
   --positive: #4ade80;
   --negative: #f87171;
+  --warning: #facc15;
+  --warning-muted: #422006;
+  --info: #60a5fa;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,6 +53,9 @@
     --border: #44403c;
     --positive: #4ade80;
     --negative: #f87171;
+    --warning: #facc15;
+    --warning-muted: #422006;
+    --info: #60a5fa;
   }
 }
 
@@ -64,6 +73,9 @@
   --color-border: var(--border);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-info: var(--info);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
